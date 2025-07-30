@@ -32,6 +32,16 @@ namespace DPSBoard
                 GameObject.Destroy(dpsOverlay);
                 dpsOverlay = null;
                 dpsContainer = null;
+                foreach (DPSEntry entry in dpsEntries.Values)
+                {
+                    if (entry.gameObject != null)
+                    {
+                        GameObject.Destroy(entry.gameObject);
+                        entry.gameObject = null;
+                        entry.nameText = null;
+                        entry.dpsText = null;
+                    }
+                }
             }
             if (isVisible)
             {
@@ -164,13 +174,21 @@ namespace DPSBoard
         {
             if (PlayerControl.AllPlayers == null || dpsContainer == null) return;
 
-            IEnumerable<(PlayerControl player, float CurrentDPS)> playerDPSList = PlayerControl.AllPlayers
-                .Where(player => player != null && player.Net != null && player.Net.CurrentDPS > 0)
+            HashSet<PlayerControl> trackedPlayers = new HashSet<PlayerControl>(dpsEntries.Keys);
+            foreach (PlayerControl player in PlayerControl.AllPlayers)
+            {
+                if (player != null && player.Net != null)
+                    trackedPlayers.Add(player);
+            }
+
+            List<PlayerControl> playerDPSList = trackedPlayers
+                .Where(player => player != null && player.Net != null)
                 .OrderByDescending(player => player.Net.CurrentDPS)
-                .Select(player => (player, player.Net.CurrentDPS));
+                .ThenByDescending(player => player.PStats != null ? player.PStats.TotalDamage() : 0)
+                .ToList();
 
             List<PlayerControl> toRemove = dpsEntries.Keys
-                .Where(player => playerDPSList.All(p => p.player != player))
+                .Where(player => !playerDPSList.Contains(player))
                 .ToList();
 
             foreach (PlayerControl player in toRemove)
@@ -180,16 +198,16 @@ namespace DPSBoard
             }
 
             int index = 0;
-            foreach ((PlayerControl player, float dps) in playerDPSList)
+            foreach (PlayerControl player in playerDPSList)
             {
-                if (!dpsEntries.ContainsKey(player))
+                if (!dpsEntries.ContainsKey(player) || dpsEntries[player].gameObject == null)
                 {
                     CreateDPSEntry(player);
                 }
 
                 if (dpsEntries.TryGetValue(player, out DPSEntry entry))
                 {
-                    entry.UpdateStats(dps);
+                    entry.UpdateStats(player.Net.CurrentDPS);
                     entry.gameObject.transform.SetSiblingIndex(index);
                 }
                 index++;
