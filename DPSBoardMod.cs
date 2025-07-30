@@ -12,9 +12,9 @@ namespace DPSBoard
 {
     public class DPSBoardMod : MelonMod
     {
-        private static GameObject dpsOverlay;
-        private static GameObject dpsContainer;
-        private static readonly Dictionary<PlayerControl, DPSEntry> dpsEntries = new Dictionary<PlayerControl, DPSEntry>();
+        internal static GameObject dpsOverlay;
+        internal static GameObject dpsContainer;
+        internal static readonly Dictionary<PlayerControl, DPSEntry> dpsEntries = new Dictionary<PlayerControl, DPSEntry>();
         internal static readonly Dictionary<PlayerControl, int> chapterStartDamage = new Dictionary<PlayerControl, int>();
         private static float updateTimer;
         private const float UPDATE_INTERVAL = 0.5f;
@@ -27,15 +27,12 @@ namespace DPSBoard
 
         public override void OnSceneWasLoaded(int buildIndex, string sceneName)
         {
-            // Clean up when changing scenes
             if (dpsOverlay != null)
             {
                 GameObject.Destroy(dpsOverlay);
                 dpsOverlay = null;
                 dpsContainer = null;
-                dpsEntries.Clear();
             }
-            // If the board was visible before, recreate it after scene load
             if (isVisible)
             {
                 CreateDPSOverlay();
@@ -282,7 +279,7 @@ namespace DPSBoard
             return Color.white;
         }
 
-        private class DPSEntry
+        internal class DPSEntry
         {
             public GameObject gameObject;
             public TextMeshProUGUI nameText;
@@ -291,8 +288,7 @@ namespace DPSBoard
             private TextMeshProUGUI totalDamageText;
             private TextMeshProUGUI chapterDamageText;
 
-            // Store last chapter damage to persist display at chapter end
-            private int lastChapterDamage = 0;
+            private int lastChapterDamage;
 
             public void UpdateStats(float dps)
             {
@@ -318,16 +314,12 @@ namespace DPSBoard
                     nameText.color = GetPlayerColor(player);
                 }
 
-                // Add or update total damage and chapter damage
                 if (player == null || player.PStats == null) return;
                 int total = player.PStats.TotalDamage();
                 int chapter = total;
-                if (chapterStartDamage.TryGetValue(player, out int start))
-                    chapter = total - start;
+                if (chapterStartDamage.TryGetValue(player, out int start)) chapter = total - start;
 
-                // If chapter damage is 0 but total > 0, keep last nonzero value
-                if (chapter > 0)
-                    lastChapterDamage = chapter;
+                if (chapter > 0) lastChapterDamage = chapter;
 
                 if (totalDamageText == null)
                 {
@@ -361,6 +353,21 @@ namespace DPSBoard
                 if (value < 1_000) return value.ToString();
                 return value < 1_000_000 ? $"{value / 1000f:F1}K" : $"{value / 1_000_000f:F1}M";
             }
+        }
+    }
+
+    // Harmony patch to clear DPS board at the start of a new Tome
+    [HarmonyPatch(typeof(GameplayManager), "StartOfGame")]
+    public static class GameplayManager_StartOfGame_Patch
+    {
+        public static void Postfix()
+        {
+            DPSBoardMod.dpsEntries.Clear();
+            DPSBoardMod.chapterStartDamage.Clear();
+            if (DPSBoardMod.dpsOverlay == null) return;
+            GameObject.Destroy(DPSBoardMod.dpsOverlay);
+            DPSBoardMod.dpsOverlay = null;
+            DPSBoardMod.dpsContainer = null;
         }
     }
 
