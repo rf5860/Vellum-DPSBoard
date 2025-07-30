@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using HarmonyLib;
 using MelonLoader;
@@ -16,6 +15,7 @@ namespace DPSBoard
         private static GameObject dpsOverlay;
         private static GameObject dpsContainer;
         private static readonly Dictionary<PlayerControl, DPSEntry> dpsEntries = new Dictionary<PlayerControl, DPSEntry>();
+        internal static readonly Dictionary<PlayerControl, int> chapterStartDamage = new Dictionary<PlayerControl, int>();
         private static float updateTimer;
         private const float UPDATE_INTERVAL = 0.5f;
         private static bool isVisible;
@@ -185,7 +185,7 @@ namespace DPSBoard
 
                 if (dpsEntries.TryGetValue(player, out DPSEntry entry))
                 {
-                    entry.UpdateDPS(dps);
+                    entry.UpdateStats(dps);
                     entry.gameObject.transform.SetSiblingIndex(index);
                 }
                 index++;
@@ -264,8 +264,7 @@ namespace DPSBoard
 
         private static Color GetPlayerColor(PlayerControl player)
         {
-            if (player.actions == null || player.actions.core == null || player.actions.core.Root == null)
-                return Color.white;
+            if (player?.actions?.core?.Root == null) return Color.white;
             switch (player.actions.core.Root.magicColor)
             {
                 case MagicColor.Red:    return new Color(1f, 0.3f, 0.3f);
@@ -283,8 +282,11 @@ namespace DPSBoard
             public TextMeshProUGUI nameText;
             public TextMeshProUGUI dpsText;
             public PlayerControl player;
+            private TextMeshProUGUI totalDamageText;
+            private TextMeshProUGUI chapterDamageText;
 
-            public void UpdateDPS(float dps)
+
+            public void UpdateStats(float dps)
             {
                 if (dpsText != null)
                 {
@@ -307,6 +309,45 @@ namespace DPSBoard
                 {
                     nameText.color = GetPlayerColor(player);
                 }
+
+                // Add or update total damage and chapter damage
+                if (player == null || player.PStats == null) return;
+                int total = player.PStats.TotalDamage();
+                int chapter = total;
+                if (chapterStartDamage.TryGetValue(player, out int start))
+                    chapter = total - start;
+
+                if (totalDamageText == null)
+                {
+                    totalDamageText = CreateStatText(gameObject, "TotalDamage", Color.cyan, 100);
+                }
+                if (chapterDamageText == null)
+                {
+                    chapterDamageText = CreateStatText(gameObject, "ChapterDamage", Color.green, 100);
+                }
+
+                totalDamageText.text = $"Tome: {FormatNumber(total)}";
+                chapterDamageText.text = $"Chapter: {FormatNumber(chapter)}";
+            }
+
+            private static TextMeshProUGUI CreateStatText(GameObject parent, string name, Color color, float width)
+            {
+                GameObject statObj = new GameObject(name);
+                statObj.transform.SetParent(parent.transform, false);
+                RectTransform rect = statObj.AddComponent<RectTransform>();
+                rect.sizeDelta = new Vector2(width, 0);
+                TextMeshProUGUI statText = statObj.AddComponent<TextMeshProUGUI>();
+                statText.fontSize = 14;
+                statText.alignment = TextAlignmentOptions.Right;
+                statText.color = color;
+                statText.fontStyle = FontStyles.Normal;
+                return statText;
+            }
+
+            private static string FormatNumber(int value)
+            {
+                if (value < 1_000) return value.ToString();
+                return value < 1_000_000 ? $"{value / 1000f:F1}K" : $"{value / 1_000_000f:F1}M";
             }
         }
     }
@@ -320,6 +361,23 @@ namespace DPSBoard
             if (PlayerControl.myInstance != null && PlayerControl.myInstance.Net != null)
             {
                 PlayerControl.myInstance.Net.CurrentDPS = CombatTextController.CurrentDPS;
+            }
+        }
+    }
+
+    // Harmony patch to hook chapter start and record damage
+    [HarmonyPatch(typeof(GameRecord), "NextChapter")]
+    public static class GameRecord_NextChapter_Patch
+    {
+        public static void Postfix()
+        {
+            if (PlayerControl.AllPlayers == null) return;
+            foreach (PlayerControl player in PlayerControl.AllPlayers)
+            {
+                if (player?.PStats != null)
+                {
+                    DPSBoardMod.chapterStartDamage[player] = player.PStats.TotalDamage();
+                }
             }
         }
     }
