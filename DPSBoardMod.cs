@@ -28,11 +28,18 @@ namespace DPSBoard
         public override void OnSceneWasLoaded(int buildIndex, string sceneName)
         {
             // Clean up when changing scenes
-            if (dpsOverlay == null) return;
-            GameObject.Destroy(dpsOverlay);
-            dpsOverlay = null;
-            dpsContainer = null;
-            dpsEntries.Clear();
+            if (dpsOverlay != null)
+            {
+                GameObject.Destroy(dpsOverlay);
+                dpsOverlay = null;
+                dpsContainer = null;
+                dpsEntries.Clear();
+            }
+            // If the board was visible before, recreate it after scene load
+            if (isVisible)
+            {
+                CreateDPSOverlay();
+            }
         }
 
         public override void OnUpdate()
@@ -242,8 +249,7 @@ namespace DPSBoard
             nameRect.sizeDelta = new Vector2(150, 0);
 
             TextMeshProUGUI nameText = nameObj.AddComponent<TextMeshProUGUI>();
-            // nameText.text = player.Username;
-            nameText.text = "SomePlayer";
+            nameText.text = player.Username;
             nameText.fontSize = 18;
             nameText.alignment = TextAlignmentOptions.Left;
             nameText.color = GetPlayerColor(player);
@@ -285,6 +291,8 @@ namespace DPSBoard
             private TextMeshProUGUI totalDamageText;
             private TextMeshProUGUI chapterDamageText;
 
+            // Store last chapter damage to persist display at chapter end
+            private int lastChapterDamage = 0;
 
             public void UpdateStats(float dps)
             {
@@ -317,17 +325,21 @@ namespace DPSBoard
                 if (chapterStartDamage.TryGetValue(player, out int start))
                     chapter = total - start;
 
+                // If chapter damage is 0 but total > 0, keep last nonzero value
+                if (chapter > 0)
+                    lastChapterDamage = chapter;
+
                 if (totalDamageText == null)
                 {
-                    totalDamageText = CreateStatText(gameObject, "TotalDamage", Color.cyan, 100);
+                    totalDamageText = CreateStatText(gameObject, "TotalDamage", Color.cyan, 80);
                 }
                 if (chapterDamageText == null)
                 {
-                    chapterDamageText = CreateStatText(gameObject, "ChapterDamage", Color.green, 100);
+                    chapterDamageText = CreateStatText(gameObject, "ChapterDamage", Color.green, 80);
                 }
 
-                totalDamageText.text = $"Tome: {FormatNumber(total)}";
-                chapterDamageText.text = $"Chapter: {FormatNumber(chapter)}";
+                totalDamageText.text = $"{FormatNumber(total)}";
+                chapterDamageText.text = $"{FormatNumber(lastChapterDamage)}";
             }
 
             private static TextMeshProUGUI CreateStatText(GameObject parent, string name, Color color, float width)
@@ -337,7 +349,7 @@ namespace DPSBoard
                 RectTransform rect = statObj.AddComponent<RectTransform>();
                 rect.sizeDelta = new Vector2(width, 0);
                 TextMeshProUGUI statText = statObj.AddComponent<TextMeshProUGUI>();
-                statText.fontSize = 14;
+                statText.fontSize = 18;
                 statText.alignment = TextAlignmentOptions.Right;
                 statText.color = color;
                 statText.fontStyle = FontStyles.Normal;
